@@ -68,7 +68,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: legitservices/stoked-base:latest
 
-      # stoatchat/api
+      # stoked/api
       - name: Docker meta
         id: meta-delta
         uses: docker/metadata-action@v4
@@ -87,7 +87,7 @@ jobs:
             BASE_IMAGE=legitservices/stoked-base:latest
           labels: ${{ steps.meta-delta.outputs.labels }}
 
-      # stoatchat/events
+      # stoked/events
       - name: Docker meta
         id: meta-bonfire
         uses: docker/metadata-action@v4
@@ -106,7 +106,7 @@ jobs:
             BASE_IMAGE=legitservices/stoked-base:latest
           labels: ${{ steps.meta-bonfire.outputs.labels }}
 
-      # stoatchat/file-server
+      # stoked/file-server
       - name: Docker meta
         id: meta-autumn
         uses: docker/metadata-action@v4
@@ -125,7 +125,7 @@ jobs:
             BASE_IMAGE=legitservices/stoked-base:latest
           labels: ${{ steps.meta-autumn.outputs.labels }}
 
-      # stoatchat/proxy
+      # stoked/proxy
       - name: Docker meta
         id: meta-january
         uses: docker/metadata-action@v4
@@ -144,7 +144,7 @@ jobs:
             BASE_IMAGE=legitservices/stoked-base:latest
           labels: ${{ steps.meta-january.outputs.labels }}
 
-      # stoatchat/gifbox
+      # stoked/gifbox
       - name: Docker meta
         id: meta-gifbox
         uses: docker/metadata-action@v4
@@ -163,7 +163,7 @@ jobs:
             BASE_IMAGE=legitservices/stoked-base:latest
           labels: ${{ steps.meta-gifbox.outputs.labels }}
 
-      # stoatchat/crond
+      # stoked/crond
       - name: Docker meta
         id: meta-crond
         uses: docker/metadata-action@v4
@@ -182,7 +182,7 @@ jobs:
             BASE_IMAGE=legitservices/stoked-base:latest
           labels: ${{ steps.meta-crond.outputs.labels }}
 
-      # stoatchat/pushd
+      # stoked/pushd
       - name: Docker meta
         id: meta-pushd
         uses: docker/metadata-action@v4
@@ -201,7 +201,7 @@ jobs:
             BASE_IMAGE=legitservices/stoked-base:latest
           labels: ${{ steps.meta-pushd.outputs.labels }}
 
-      # stoatchat/voice-ingress
+      # stoked/voice-ingress
       - name: Docker meta
         id: meta-voice-ingress
         uses: docker/metadata-action@v4

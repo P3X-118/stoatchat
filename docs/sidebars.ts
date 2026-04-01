@@ -34,12 +34,12 @@ const sidebars: SidebarsConfig = {
         {
           type: 'link',
           label: "for Web",
-          href: "https://stoatchat.github.io/for-web"
+          href: "https://stoked.github.io/for-web"
         },
         {
           type: 'link',
           label: "for Android",
-          href: "https://stoatchat.github.io/for-android"
+          href: "https://stoked.github.io/for-android"
         }
       ]
     }

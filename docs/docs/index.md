@@ -13,5 +13,5 @@ Learn more about:
 
 You may also be interested in the:
 
-- [Frontend Book](https://stoatchat.github.io/for-web)
-- [Android Book](https://stoatchat.github.io/for-android)
+- [Frontend Book](https://stoked.github.io/for-web)
+- [Android Book](https://stoked.github.io/for-android)

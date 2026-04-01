@@ -11,9 +11,9 @@ You can contribute to Stoat in a variety of ways:
 The easiest, but most important, way to contribute to Stoat is to voice your opinion and give us feedback.
 We want to hear what you think and appreciate and await your feature suggestions, bug reports and general opinions on everything Stoat has to offer.
 
-Typically, you can open issues on the relevant [GitHub repositories](https://github.com/stoatchat).
+Typically, you can open issues on the relevant [GitHub repositories](https://github.com/stoked).
 
-<!-- Within the Stoat app, you can navigate to the [**feedback tab**](https://app.revolt.chat/settings/feedback), or you can open an issue on the relevant [GitHub repo](https://github.com/stoatchat). -->
+<!-- Within the Stoat app, you can navigate to the [**feedback tab**](https://app.revolt.chat/settings/feedback), or you can open an issue on the relevant [GitHub repo](https://github.com/stoked). -->
 
 ### 2. Translate
 

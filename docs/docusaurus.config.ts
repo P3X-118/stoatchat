@@ -15,8 +15,8 @@ const config: Config = {
   url: 'https://developers.stoat.chat',
   baseUrl: '/',
 
-  organizationName: 'stoatchat',
-  projectName: 'stoatchat',
+  organizationName: 'stoked',
+  projectName: 'stoked',
 
   onBrokenLinks: 'throw',
 
@@ -33,7 +33,7 @@ const config: Config = {
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           editUrl:
-            'https://github.com/stoatchat/stoatchat/tree/main/docs/',
+            'https://github.com/stoked/stoked/tree/main/docs/',
         },
       } satisfies Preset.Options,
     ],
@@ -56,7 +56,7 @@ const config: Config = {
       {
         fromExtensions: ['html', 'htm'],
         redirects: [
-          // legacy docs website (stoatchat/developer-wiki)
+          // legacy docs website (stoked/developer-wiki)
           {
             from: '/developers/api/reference.html',
             to: '/api-reference',
@@ -92,7 +92,7 @@ const config: Config = {
           label: 'Docs'
         },
         {
-          href: 'https://github.com/stoatchat',
+          href: 'https://github.com/stoked',
           label: 'GitHub',
           position: 'right',
         },
@@ -106,7 +106,7 @@ const config: Config = {
           items: [
             {
               label: 'Source Code',
-              href: 'https://github.com/stoatchat'
+              href: 'https://github.com/stoked'
             },
             {
               label: 'Help Translate',
@@ -140,7 +140,7 @@ const config: Config = {
             },
             {
               label: 'Reddit',
-              href: 'https://reddit.com/r/stoatchat'
+              href: 'https://reddit.com/r/stoked'
             },
             {
               label: 'Stoat Server',

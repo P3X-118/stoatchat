@@ -79,8 +79,8 @@ All of these answers are written from the perspective of the project owner.
   - You **may not** use any of the Stoat branding or brand assets to advertise or promote your third party instance.
 
   You can self-host Stoat by:
-  - Using [Docker Compose and our recommended guide](https://github.com/stoatchat/self-hosted).
-  - Building individual components yourself from the [source code](https://github.com/stoatchat).
+  - Using [Docker Compose and our recommended guide](https://github.com/stoked/self-hosted).
+  - Building individual components yourself from the [source code](https://github.com/stoked).
 </details>
 
 <details>

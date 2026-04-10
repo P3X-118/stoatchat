@@ -19,203 +19,148 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ---- Base image: built once per architecture in parallel ----
   base:
-    name: Test base image build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      # Configure build environment
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      # Build the image
-      - name: Build base image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: false
-          platforms: linux/amd64,linux/arm64
-          tags: legitservices/stoked-base:latest
-          cache-from: type=gha,scope=buildx-base-multi-arch
-          cache-to: type=gha,scope=buildx-base-multi-arch,mode=max
-
-  publish:
+    name: Base (${{ matrix.platform }})
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request'
-    name: Publish Docker images
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+          - platform: linux/arm64
+            arch: arm64
     steps:
-      # Configure build environment
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      # Authenticate with Docker Hub and GHCR
+        uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # Build the image
-      - name: Build base image
-        uses: docker/build-push-action@v4
+      - name: Build & push base image
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64
-          tags: legitservices/stoked-base:latest
+          platforms: ${{ matrix.platform }}
+          tags: legitservices/stoked-base:latest-${{ matrix.arch }}
+          cache-from: type=gha,scope=base-${{ matrix.arch }}
+          cache-to: type=gha,scope=base-${{ matrix.arch }},mode=max
 
-      # stoked/api
+  base-manifest:
+    name: Base manifest
+    needs: base
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Create multi-arch manifest
+        run: |
+          docker buildx imagetools create -t legitservices/stoked-base:latest \
+            legitservices/stoked-base:latest-amd64 \
+            legitservices/stoked-base:latest-arm64
+
+  # ---- All services: 8 services × 2 arches = 16 parallel jobs ----
+  services:
+    name: ${{ matrix.service.name }} (${{ matrix.platform }})
+    needs: base-manifest
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+        service:
+          - { name: api,           file: crates/delta/Dockerfile }
+          - { name: events,        file: crates/bonfire/Dockerfile }
+          - { name: file-server,   file: crates/services/autumn/Dockerfile }
+          - { name: proxy,         file: crates/services/january/Dockerfile }
+          - { name: gifbox,        file: crates/services/gifbox/Dockerfile }
+          - { name: crond,         file: crates/daemons/crond/Dockerfile }
+          - { name: pushd,         file: crates/daemons/pushd/Dockerfile }
+          - { name: voice-ingress, file: crates/daemons/voice-ingress/Dockerfile }
+        include:
+          - platform: linux/amd64
+            arch: amd64
+          - platform: linux/arm64
+            arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Docker meta
-        id: meta-delta
-        uses: docker/metadata-action@v4
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          images: |
-            legitservices/stoked-api
-      - name: Publish
-        uses: docker/build-push-action@v4
+          images: legitservices/stoked-${{ matrix.service.name }}
+          tags: |
+            type=ref,event=branch,suffix=-${{ matrix.arch }}
+            type=semver,pattern={{version}},suffix=-${{ matrix.arch }}
+            type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.arch }}
+            type=sha,prefix=sha-,suffix=-${{ matrix.arch }}
+      - name: Build & push
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64
-          file: crates/delta/Dockerfile
-          tags: ${{ steps.meta-delta.outputs.tags }}
+          platforms: ${{ matrix.platform }}
+          file: ${{ matrix.service.file }}
+          tags: ${{ steps.meta.outputs.tags }}
           build-args: |
             BASE_IMAGE=legitservices/stoked-base:latest
-          labels: ${{ steps.meta-delta.outputs.labels }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service.name }}-${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.service.name }}-${{ matrix.arch }},mode=max
 
-      # stoked/events
-      - name: Docker meta
-        id: meta-bonfire
-        uses: docker/metadata-action@v4
+  # ---- Combine per-arch images into multi-arch manifests ----
+  manifest:
+    name: ${{ matrix.service }} manifest
+    needs: services
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [api, events, file-server, proxy, gifbox, crond, pushd, voice-ingress]
+    steps:
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
-          images: |
-            legitservices/stoked-events
-      - name: Publish
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          file: crates/bonfire/Dockerfile
-          tags: ${{ steps.meta-bonfire.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=legitservices/stoked-base:latest
-          labels: ${{ steps.meta-bonfire.outputs.labels }}
-
-      # stoked/file-server
-      - name: Docker meta
-        id: meta-autumn
-        uses: docker/metadata-action@v4
-        with:
-          images: |
-            legitservices/stoked-file-server
-      - name: Publish
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          file: crates/services/autumn/Dockerfile
-          tags: ${{ steps.meta-autumn.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=legitservices/stoked-base:latest
-          labels: ${{ steps.meta-autumn.outputs.labels }}
-
-      # stoked/proxy
-      - name: Docker meta
-        id: meta-january
-        uses: docker/metadata-action@v4
-        with:
-          images: |
-            legitservices/stoked-proxy
-      - name: Publish
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          file: crates/services/january/Dockerfile
-          tags: ${{ steps.meta-january.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=legitservices/stoked-base:latest
-          labels: ${{ steps.meta-january.outputs.labels }}
-
-      # stoked/gifbox
-      - name: Docker meta
-        id: meta-gifbox
-        uses: docker/metadata-action@v4
-        with:
-          images: |
-            legitservices/stoked-gifbox
-      - name: Publish
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          file: crates/services/gifbox/Dockerfile
-          tags: ${{ steps.meta-gifbox.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=legitservices/stoked-base:latest
-          labels: ${{ steps.meta-gifbox.outputs.labels }}
-
-      # stoked/crond
-      - name: Docker meta
-        id: meta-crond
-        uses: docker/metadata-action@v4
-        with:
-          images: |
-            legitservices/stoked-crond
-      - name: Publish
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          file: crates/daemons/crond/Dockerfile
-          tags: ${{ steps.meta-crond.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=legitservices/stoked-base:latest
-          labels: ${{ steps.meta-crond.outputs.labels }}
-
-      # stoked/pushd
-      - name: Docker meta
-        id: meta-pushd
-        uses: docker/metadata-action@v4
-        with:
-          images: |
-            legitservices/stoked-pushd
-      - name: Publish
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          file: crates/daemons/pushd/Dockerfile
-          tags: ${{ steps.meta-pushd.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=legitservices/stoked-base:latest
-          labels: ${{ steps.meta-pushd.outputs.labels }}
-
-      # stoked/voice-ingress
-      - name: Docker meta
-        id: meta-voice-ingress
-        uses: docker/metadata-action@v4
-        with:
-          images: |
-            legitservices/stoked-voice-ingress
-      - name: Publish
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64,linux/arm64
-          file: crates/daemons/voice-ingress/Dockerfile
-          tags: ${{ steps.meta-voice-ingress.outputs.tags }}
-          build-args: |
-            BASE_IMAGE=legitservices/stoked-base:latest
-          labels: ${{ steps.meta-voice-ingress.outputs.labels }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Compute base tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            # Strip leading 'v' from semver tags
+            TAG="${{ github.ref_name }}"
+            echo "tag=${TAG#v}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+      - name: Create multi-arch manifest
+        run: |
+          IMAGE=legitservices/stoked-${{ matrix.service }}
+          TAG=${{ steps.tag.outputs.tag }}
+          docker buildx imagetools create -t $IMAGE:$TAG \
+            $IMAGE:$TAG-amd64 \
+            $IMAGE:$TAG-arm64

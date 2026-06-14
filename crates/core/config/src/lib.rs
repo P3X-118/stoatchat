@@ -195,6 +195,22 @@ pub struct ApiSecurityCaptcha {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct ApiOidc {
+    /// Master switch; OIDC is off when false (or when `issuer` is empty)
+    pub enabled: bool,
+    /// OpenID Connect issuer URL, e.g. https://auth.cooey.club/application/o/stoked/
+    pub issuer: String,
+    /// OAuth2 client identifier registered with the IdP
+    pub client_id: String,
+    /// OAuth2 client secret (confidential client)
+    pub client_secret: String,
+    /// Space-separated scopes, e.g. "openid profile email"
+    pub scopes: String,
+    /// Redirect URI registered with the IdP (must point at /auth/oidc/callback)
+    pub redirect_uri: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct ApiSecurity {
     pub authifier_shield_key: String,
     pub voso_legacy_token: String,
@@ -241,6 +257,7 @@ pub struct Api {
     pub workers: ApiWorkers,
     pub livekit: ApiLiveKit,
     pub users: ApiUsers,
+    pub oidc: ApiOidc,
 }
 
 #[derive(Deserialize, Debug, Clone)]

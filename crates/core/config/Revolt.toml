@@ -66,6 +66,17 @@ tenor_key = ""
 hcaptcha_key = ""
 hcaptcha_sitekey = ""
 
+[api.oidc]
+# Native OpenID Connect (Authentik) login configuration.
+# Off by default: `enabled = false` (or an empty `issuer`) means OIDC is disabled,
+# exactly like the SMTP host master-switch.
+enabled = false
+issuer = ""
+client_id = ""
+client_secret = ""
+scopes = "openid profile email"
+redirect_uri = ""
+
 [api.workers]
 # Maximum concurrent connections (to proxy server)
 max_concurrent_connections = 50

@@ -4,6 +4,7 @@ pub use rocket::http::Status;
 pub use rocket::response::Redirect;
 use rocket::{Build, Rocket};
 
+mod auth;
 mod bots;
 mod channels;
 mod customisation;
@@ -104,6 +105,11 @@ pub fn mount(config: Settings, mut rocket: Rocket<Build>) -> Rocket<Build> {
             "/sync" => sync::routes()
         };
     }
+
+    // Native OpenID Connect (Authentik) login routes — browser-facing 302
+    // redirect endpoints mounted alongside the authifier mounts (/auth/account,
+    // /auth/session, /auth/mfa). Kept out of the okapi document on purpose.
+    rocket = rocket.mount("/auth/oidc", auth::routes());
 
     rocket
 }

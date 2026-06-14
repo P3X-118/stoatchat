@@ -301,7 +301,7 @@ async fn callback_inner(
     let id_token = exchange_code(oidc, &code).await?;
 
     // Validate the ID token and read the verified claims.
-    let claims = validate_id_token(oidc, &id_token, &expected.nonce)?;
+    let claims = validate_id_token(oidc, &id_token, &expected.nonce).await?;
 
     let email = claims.email.ok_or("missing_email")?;
     // Reject only an explicit `email_verified: false`. Authentik always sends
@@ -364,47 +364,43 @@ async fn exchange_code(
 
 /// Validate the ID token and return its claims.
 ///
-/// We validate **issuer**, **audience** (must contain our client_id), **expiry**
-/// and **nonce**. Signature verification against the IdP JWKS is currently
-/// stubbed — see the TODO below.
-fn validate_id_token(
+/// We verify the RS256 **signature** (key fetched from the IdP JWKS and matched
+/// by the token header `kid`), plus **issuer**, **audience** (must contain our
+/// client_id), **expiry** and **nonce**.
+async fn validate_id_token(
     oidc: &revolt_config::ApiOidc,
     id_token: &str,
     expected_nonce: &str,
 ) -> std::result::Result<IdTokenClaims, &'static str> {
-    use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+    use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 
-    // TODO(SECURITY): verify the JWT signature against the IdP JWKS
-    // (`<issuer>/jwks/` for Authentik, or the `jwks_uri` from discovery) before
-    // trusting any claim. We currently decode the token with signature
-    // verification DISABLED (`insecure_disable_signature_validation`) and rely on
-    // the fact that the token was just delivered directly from the IdP's token
-    // endpoint over the authenticated, TLS-pinned mesh connection in
-    // `exchange_code` — an attacker cannot inject a forged token into that
-    // server-to-server response without breaking TLS. This is acceptable for the
-    // first compiling pass per the integration spec, but MUST be replaced with
-    // real RS256 JWKS verification: fetch + cache `<issuer>/jwks/`, pick the key
-    // by the token header `kid`, build `Validation::new(Algorithm::RS256)` and
-    // pass the real `DecodingKey::from_rsa_components`/`from_jwk`. The
-    // issuer/audience/expiry checks below are already performed by
-    // `jsonwebtoken`, so swapping the key + algorithm is the only remaining work.
+    // Identify the signing key by the token header `kid`.
+    let header = decode_header(id_token).map_err(|_| "id_token_bad_header")?;
+    let kid = header.kid.ok_or("id_token_no_kid")?;
+
+    // Fetch the IdP JWKS. Authentik exposes it at `<issuer>/jwks/`. The issuer
+    // host is used verbatim (resolved over the mesh via the container
+    // `--add-host`, validating the public LE cert).
+    // TODO(perf): cache the JWKS per-issuer with a short TTL instead of fetching
+    // on every callback (logins are infrequent, so per-call is acceptable here).
+    let jwks_url = format!("{}jwks/", ensure_trailing_slash(&oidc.issuer));
+    let jwks: JwkSet = reqwest::Client::new()
+        .get(&jwks_url)
+        .send()
+        .await
+        .map_err(|_| "jwks_fetch_failed")?
+        .json()
+        .await
+        .map_err(|_| "jwks_decode_failed")?;
+    let jwk = jwks.find(&kid).ok_or("jwks_kid_not_found")?;
+    let key = DecodingKey::from_jwk(jwk).map_err(|_| "jwks_key_invalid")?;
+
+    // Real RS256 signature verification + standard claim checks (Authentik signs
+    // ID tokens with RS256 by default).
     let mut validation = Validation::new(Algorithm::RS256);
-    validation.insecure_disable_signature_validation();
     validation.set_issuer(&[oidc.issuer.as_str()]);
     validation.set_audience(&[oidc.client_id.as_str()]);
     validation.validate_exp = true;
-    // Accept whatever signing algorithm the IdP used while signatures are not
-    // checked (Authentik defaults to RS256); the JWKS swap above will pin this.
-    validation.algorithms = vec![
-        Algorithm::RS256,
-        Algorithm::RS384,
-        Algorithm::RS512,
-        Algorithm::ES256,
-        Algorithm::HS256,
-    ];
-
-    // A dummy key is sufficient because signature validation is disabled above.
-    let key = DecodingKey::from_secret(b"unused-signature-validation-disabled");
 
     let token =
         decode::<IdTokenClaims>(id_token, &key, &validation).map_err(|_| "id_token_invalid")?;

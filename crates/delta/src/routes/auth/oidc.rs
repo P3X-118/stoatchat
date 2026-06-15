@@ -141,24 +141,33 @@ impl Audience {
     }
 }
 
-/// Build the authorization endpoint URL from the issuer.
-///
-/// Authentik exposes the authorize endpoint at `<issuer>/authorize` and the
-/// token endpoint at `<issuer>/token`. We derive them from the issuer rather
-/// than performing live discovery so the route compiles and works without a
-/// network round-trip at request build time; the issuer host (not an IP) is
-/// always used.
-///
-/// TODO: replace the convention-based endpoint derivation with a real
-/// `<issuer>/.well-known/openid-configuration` discovery fetch (cached) so this
-/// also works against non-Authentik IdPs.
-fn authorize_endpoint(issuer: &str) -> String {
-    format!("{}authorize", ensure_trailing_slash(issuer))
+/// OIDC provider metadata we consume from discovery
+/// (`<issuer>/.well-known/openid-configuration`). Authentik's authorize/token
+/// endpoints are SHARED (`/application/o/authorize/`, `/application/o/token/`) —
+/// they are NOT `<issuer>/authorize` — so we must discover them, never derive by
+/// convention. (`jwks_uri` IS per-application.)
+#[derive(Deserialize)]
+struct OidcDiscovery {
+    authorization_endpoint: String,
+    token_endpoint: String,
+    jwks_uri: String,
 }
 
-/// Token endpoint URL derived from the issuer (see [`authorize_endpoint`]).
-fn token_endpoint(issuer: &str) -> String {
-    format!("{}token", ensure_trailing_slash(issuer))
+/// Fetch the OIDC discovery document for the issuer. The issuer host is used
+/// verbatim (resolved over the SGC mesh by the container's `--add-host`).
+async fn discover(issuer: &str) -> std::result::Result<OidcDiscovery, &'static str> {
+    let url = format!(
+        "{}.well-known/openid-configuration",
+        ensure_trailing_slash(issuer)
+    );
+    reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await
+        .map_err(|_| "discovery_fetch_failed")?
+        .json::<OidcDiscovery>()
+        .await
+        .map_err(|_| "discovery_decode_failed")
 }
 
 fn ensure_trailing_slash(value: &str) -> String {
@@ -212,8 +221,12 @@ pub async fn login(jar: &CookieJar<'_>) -> Result<Redirect> {
     // in production: chat.cooey.club). Left unset so local http dev still works.
     jar.add(cookie);
 
-    // Build the authorization request.
-    let mut url = url::Url::parse(&authorize_endpoint(&oidc.issuer))
+    // Discover the IdP endpoints (Authentik's authorize endpoint is a shared
+    // path, not <issuer>/authorize), then build the authorization request.
+    let discovery = discover(&oidc.issuer)
+        .await
+        .map_err(|_| create_error!(InternalError))?;
+    let mut url = url::Url::parse(&discovery.authorization_endpoint)
         .map_err(|_| create_error!(InternalError))?;
     url.query_pairs_mut()
         .append_pair("response_type", "code")
@@ -297,11 +310,15 @@ async fn callback_inner(
         return Err("state_mismatch");
     }
 
-    // Exchange the authorization code for tokens (server-side, confidential).
-    let id_token = exchange_code(oidc, &code).await?;
+    // Discover the IdP endpoints (shared authorize/token paths in Authentik).
+    let discovery = discover(&oidc.issuer).await?;
 
-    // Validate the ID token and read the verified claims.
-    let claims = validate_id_token(oidc, &id_token, &expected.nonce).await?;
+    // Exchange the authorization code for tokens (server-side, confidential).
+    let id_token = exchange_code(oidc, &discovery.token_endpoint, &code).await?;
+
+    // Validate the ID token (signature via the discovered JWKS) + read claims.
+    let claims =
+        validate_id_token(oidc, &discovery.jwks_uri, &id_token, &expected.nonce).await?;
 
     let email = claims.email.ok_or("missing_email")?;
     // Reject only an explicit `email_verified: false`. Authentik always sends
@@ -337,6 +354,7 @@ async fn callback_inner(
 /// verbatim (resolved over the mesh by the container's `--add-host`).
 async fn exchange_code(
     oidc: &revolt_config::ApiOidc,
+    token_endpoint: &str,
     code: &str,
 ) -> std::result::Result<String, &'static str> {
     let params = [
@@ -348,7 +366,7 @@ async fn exchange_code(
     ];
 
     let response = reqwest::Client::new()
-        .post(token_endpoint(&oidc.issuer))
+        .post(token_endpoint)
         .form(&params)
         .send()
         .await
@@ -369,6 +387,7 @@ async fn exchange_code(
 /// client_id), **expiry** and **nonce**.
 async fn validate_id_token(
     oidc: &revolt_config::ApiOidc,
+    jwks_uri: &str,
     id_token: &str,
     expected_nonce: &str,
 ) -> std::result::Result<IdTokenClaims, &'static str> {
@@ -378,14 +397,11 @@ async fn validate_id_token(
     let header = decode_header(id_token).map_err(|_| "id_token_bad_header")?;
     let kid = header.kid.ok_or("id_token_no_kid")?;
 
-    // Fetch the IdP JWKS. Authentik exposes it at `<issuer>/jwks/`. The issuer
-    // host is used verbatim (resolved over the mesh via the container
-    // `--add-host`, validating the public LE cert).
+    // Fetch the IdP JWKS (the discovered jwks_uri, per-application in Authentik).
     // TODO(perf): cache the JWKS per-issuer with a short TTL instead of fetching
     // on every callback (logins are infrequent, so per-call is acceptable here).
-    let jwks_url = format!("{}jwks/", ensure_trailing_slash(&oidc.issuer));
     let jwks: JwkSet = reqwest::Client::new()
-        .get(&jwks_url)
+        .get(jwks_uri)
         .send()
         .await
         .map_err(|_| "jwks_fetch_failed")?

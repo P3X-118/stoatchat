@@ -210,6 +210,21 @@ pub struct ApiOidc {
     pub redirect_uri: String,
 }
 
+/// Internal pds-pro session broker: lets a first-party surface (chat) embed the
+/// user's Bluesky without a second login. delta authenticates the chat user,
+/// then calls pds-pro server-to-server over the shared host docker network to
+/// mint an atproto session for that user's OWN linked account.
+#[derive(Deserialize, Debug, Clone)]
+pub struct ApiPdsPro {
+    /// Master switch; the broker is off when false (or `base_url` is empty)
+    pub enabled: bool,
+    /// Base URL of the internal pds-pro service, reached host-internally over the
+    /// shared docker network (e.g. http://yo-pds-pro:8080) — never public-facing.
+    pub base_url: String,
+    /// Shared bearer secret authenticating delta -> pds-pro /internal/atproto-session
+    pub broker_secret: String,
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct ApiSecurity {
     pub authifier_shield_key: String,
@@ -258,6 +273,7 @@ pub struct Api {
     pub livekit: ApiLiveKit,
     pub users: ApiUsers,
     pub oidc: ApiOidc,
+    pub pds_pro: ApiPdsPro,
 }
 
 #[derive(Deserialize, Debug, Clone)]

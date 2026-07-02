@@ -77,6 +77,16 @@ client_secret = ""
 scopes = "openid profile email"
 redirect_uri = ""
 
+[api.pds_pro]
+# Internal pds-pro session broker for embedding the user's Bluesky in chat.
+# Off by default: `enabled = false` (or an empty `base_url`) disables it. When
+# enabled, base_url points at the internal pds-pro service over the shared host
+# docker network (e.g. http://yo-pds-pro:8080) and broker_secret is the shared
+# bearer secret (derived from sgc_pgsk, salt 'pds.pro.broker').
+enabled = false
+base_url = ""
+broker_secret = ""
+
 [api.workers]
 # Maximum concurrent connections (to proxy server)
 max_concurrent_connections = 50

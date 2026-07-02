@@ -111,6 +111,10 @@ pub fn mount(config: Settings, mut rocket: Rocket<Build>) -> Rocket<Build> {
     // /auth/session, /auth/mfa). Kept out of the okapi document on purpose.
     rocket = rocket.mount("/auth/oidc", auth::routes());
 
+    // In-chat Bluesky session broker (delta -> pds-pro server-to-server). JSON,
+    // kept out of the okapi document; authenticated by the chat session.
+    rocket = rocket.mount("/auth/atproto", auth::atproto_routes());
+
     rocket
 }
 
